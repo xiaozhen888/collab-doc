@@ -35,7 +35,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/你的用户名/你的仓库名.git
+git clone https://github.com/xiaozhen888/collab-doc.git
 
 # 2. 启动基础设施
 cd docs/deploy
@@ -52,8 +52,8 @@ npm run dev
 
 访问 http://localhost:5173
 
-##项目截图
+## 项目截图
 （待补充）
 
-##许可证
+## 许可证
 MIT
