@@ -51,6 +51,7 @@ npm install
 npm run dev
 
 访问 http://localhost:5173
+```bash
 
 ## 项目截图
 （待补充）
