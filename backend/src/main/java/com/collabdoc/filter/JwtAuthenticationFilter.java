@@ -59,4 +59,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         //无论token验证成功还是失败，都要调用这个方法，否则请求会被卡住
         filterChain.doFilter(request, response);
     }
+}
 
