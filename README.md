@@ -1,6 +1,6 @@
 # 实时协作文档编辑器
 
-基于 Yjs + Spring Boot + Vue3 的实时多人协作文档系统，支持多人同时编辑、光标同步、版本历史。
+基于 Yjs + Spring Boot + Vue3 的实时多人协作文档系统，支持多人同时编辑、版本历史。
 
 ## 功能特性
 
@@ -12,7 +12,7 @@
 - [ ] 评论与批注（开发中）
 
 ## 技术架构
-前端 (Vue3 + Yjs)  ←WebSocket→  后端 (Spring Boot)  ←→  Redis + MySQL
+前端 (Vue3)  ←WebSocket→  后端 (Spring Boot)  ←→  Redis + MySQL
 
 ## 技术栈
 
