@@ -81,7 +81,7 @@ public class PermissionService {
 
         String perm = p.getPermission();
         if ("manage".equals(perm)) return true;
-        if ("edit".equals(perm) && "edit".equals(required)) return true;
+        if ("write".equals(perm) && "write".equals(required)) return true;
         if ("read".equals(perm) && "read".equals(required)) return true;
 
         return false;
