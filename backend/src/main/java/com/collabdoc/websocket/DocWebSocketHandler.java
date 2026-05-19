@@ -5,11 +5,13 @@ import com.collabdoc.service.PermissionService;
 import com.collabdoc.dto.WebSocketMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.CloseStatus;  //连接关闭状态（正常关闭、异常关闭等）
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession; //WebSocket会话，代表一个客户端连接
-import org.springframework.web.socket.handler.TextWebSocketHandler; //文本消息处理器基类，处理文本类型的WebSocket消息
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.io.IOException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
@@ -21,74 +23,97 @@ import java.util.concurrent.Executor;
  * 3. 心跳检测
  * 4. 权限校验
  *
+ * 线程安全说明：
+ *   - 使用 ConcurrentHashMap 为每个 session 维护独立的锁对象
+ *   - 所有 sendMessage 操作通过 safeSendMessage() 加锁，避免并发写入冲突
+ *
  * @author xiaozhen
  */
-@Component  //告诉Spring这是一个组件，spring会自动创建它的实例，其他地方可以用@Autowired注入
+@Component
 public class DocWebSocketHandler extends TextWebSocketHandler {
 
     private final RoomManager roomManager;
     private final DocumentService documentService;
     private final PermissionService permissionService;
-    private final ObjectMapper mapper = new ObjectMapper(); //Jackson的JSON解析器，负责把JSON字符串 ↔ Java对象互相转换
+    private final ObjectMapper mapper = new ObjectMapper();
     private final Executor webSocketExecutor;
 
-    //构造器注入
-    public DocWebSocketHandler(RoomManager roomManager, DocumentService documentService, PermissionService permissionService, Executor webSocketExecutor){
+    // 全局 session 锁映射，保证同一个 session 的 sendMessage 串行执行
+    private static final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
+
+    public DocWebSocketHandler(RoomManager roomManager, DocumentService documentService,
+                               PermissionService permissionService, Executor webSocketExecutor) {
         this.roomManager = roomManager;
         this.documentService = documentService;
         this.permissionService = permissionService;
         this.webSocketExecutor = webSocketExecutor;
     }
 
+    /**
+     * 获取指定 session 的锁对象
+     * @param session WebSocket 会话
+     * @return 该 session 对应的锁对象
+     */
+    private Object getLock(WebSocketSession session) {
+        return sessionLocks.computeIfAbsent(session.getId(), k -> new Object());
+    }
+
+    /**
+     * 线程安全地发送消息
+     * 使用 session 级别的锁，避免并发写入导致的 TEXT_PARTIAL_WRITING 错误
+     *
+     * @param session 目标会话
+     * @param message 要发送的文本消息
+     * @throws IOException 发送失败时抛出
+     */
+    private void safeSendMessage(WebSocketSession session, String message) throws IOException {
+        synchronized (getLock(session)) {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(message));
+            }
+        }
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        //session：代表这个客户端的会话对象
         System.out.println("WebSocket 连接建立：" + session.getId());
         System.out.println("连接 URI：" + session.getUri());
 
         String query = session.getUri().getQuery();
         String userId = null;
-        if (query != null && query.contains("userId=")){
+        if (query != null && query.contains("userId=")) {
             userId = query.split("userId=")[1].split("&")[0];
         }
 
-        //如果取不到，打印日志，但不影响连接
         if (userId == null) userId = "anonymous";
-        session.getAttributes().put("userId",userId);
+        session.getAttributes().put("userId", userId);
         System.out.println("userId:" + userId);
     }
 
-
-    //核心：处理消息
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        //异步处理
         webSocketExecutor.execute(() -> {
             try {
-                processMessage(session,message);
-            }catch (Exception e){
+                processMessage(session, message);
+            } catch (Exception e) {
                 System.err.println("处理消息失败：" + e.getMessage());
             }
         });
     }
 
-    /**
-     * 处理文本消息
-     *
-     * @param session 当前会话
-     * @param message 收到的消息
-     * @throws Exception 处理异常
-     */
-    private void processMessage(WebSocketSession session,TextMessage message)throws Exception{
+    private void processMessage(WebSocketSession session, TextMessage message) throws Exception {
         String payload = message.getPayload();
 
-        // 心跳检测
-        if ("ping".equals(payload)) {
-            session.sendMessage(new TextMessage("pong"));
+        if (payload == null || payload.trim().isEmpty()) {
+            System.out.println("收到空消息，忽略");
             return;
         }
 
-        // 使用 DTO 解析
+        if ("ping".equals(payload)) {
+            safeSendMessage(session, "pong");
+            return;
+        }
+
         WebSocketMessage msg = mapper.readValue(payload, WebSocketMessage.class);
         String type = msg.getType();
 
@@ -102,14 +127,15 @@ public class DocWebSocketHandler extends TextWebSocketHandler {
             reply.setType("init");
             reply.setContent(content == null ? "" : content);
             String replyJson = mapper.writeValueAsString(reply);
-            session.sendMessage(new TextMessage(replyJson));
+
+            safeSendMessage(session, replyJson);
 
         } else if ("update".equals(type)) {
             String docId = msg.getDocId();
             String newContent = msg.getContent();
             String userId = (String) session.getAttributes().get("userId");
 
-            if (!permissionService.hasPermission(docId, userId, "edit")) {
+            if (!permissionService.hasPermission(docId, userId, "write")) {
                 System.out.println("用户无编辑权限：" + userId);
                 return;
             }
@@ -121,60 +147,17 @@ public class DocWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
-        roomManager.leaveRoom(session);     //清除用户信息
+        // 清理锁对象，防止内存泄漏
+        sessionLocks.remove(session.getId());
+        roomManager.leaveRoom(session);
         System.out.println("WebSocket 连接关闭：" + session.getId());
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        System.err.println("WebSocket 传输错误：" + exception.getMessage());
-        roomManager.leaveRoom(session);     ////清除用户信息
+        String msg = exception != null ? exception.getMessage() : "unknown";
+        System.err.println("WebSocket 传输错误：" + (msg != null ? msg : "无详细信息"));
+        sessionLocks.remove(session.getId());
+        roomManager.leaveRoom(session);
     }
-
-    private void printDiff(String oldStr,String newStr){
-        if (oldStr == null) oldStr = "";
-        if (newStr == null) newStr = "";
-
-        if (oldStr.equals(newStr)){
-            System.out.println("内容无变化");
-            return;
-        }
-
-        //找出最短长度
-        int minLen = Math.min(oldStr.length(),newStr.length());
-
-        //找出第一个不同的位置
-        int firstDiff = 0;
-        for (int i=0;i<minLen;i++){
-            if (oldStr.charAt(i) != newStr.charAt(i)){
-                firstDiff = i;
-                break;
-            }
-            firstDiff = i+1;
-        }
-
-        //判断操作类型
-        if (newStr.length()>oldStr.length()){
-            //新增了内容
-            int addedLen = newStr.length() - oldStr.length();   //获取新增内容长度
-            String added = newStr.substring(firstDiff,firstDiff+addedLen);  //获取新增内容
-            System.out.println("【新增】在位置" + firstDiff + "添加了：" + added);
-        } else if (newStr.length()<oldStr.length()) {
-            //删除了内容
-            int deletedLen = oldStr.length() - newStr.length(); //获取新增内容长度
-            String deleted = oldStr.substring(firstDiff,firstDiff + deletedLen);
-            System.out.println("【删除】在位置" + firstDiff + "删除了：" + deleted);
-        }else {
-            //长度相同，是替换
-            String oldPart = oldStr.substring(firstDiff,Math.min(firstDiff + 20,oldStr.length()));
-            String newPart = newStr.substring(firstDiff,Math.min(firstDiff + 20,newStr.length()));
-            System.out.println("【修改】 位置" + firstDiff + "处");
-            System.out.println("原内容：" + oldPart +(oldStr.length()>firstDiff + 20?"...":""));
-            System.out.println("新内容：" + newPart +(newStr.length()>firstDiff + 20?"...":""));
-
-            //打印长度变化
-            System.out.println(" 长度变化：" + oldStr.length() + "--→" + newStr.length() + "字符");
-        }
-    }
-
 }
