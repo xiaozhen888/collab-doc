@@ -55,6 +55,13 @@ public class UserService {
 
         if (user == null) throw new RuntimeException("用户不存在");
 
+        // 临时调试日志
+        System.out.println("=== 登录调试 ===");
+        System.out.println("输入密码: " + password);
+        System.out.println("数据库密码: " + user.getPassword());
+        System.out.println("比对结果: " + passwordEncoder.matches(password, user.getPassword()));
+        System.out.println("================");
+
         //passwordEncoder.matches(明文，密文)：比对输入的密码和数据库中的加密密码
         if (!passwordEncoder.matches(password, user.getPassword())) throw new RuntimeException("用户名或密码错误");
 
