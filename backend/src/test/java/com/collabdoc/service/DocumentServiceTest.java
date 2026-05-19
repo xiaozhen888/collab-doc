@@ -31,10 +31,12 @@ public class DocumentServiceTest {
 
     @Test
     void testCreateAndGetDocument(){
+        String userId = "test-user-001";
+
         //创建文档
         Document doc = new Document();
         doc.setTitle("测试文档");
-        Document created = documentService.createDocument(doc);
+        Document created = documentService.createDocument(doc,userId);
 
         //验证 ID 已生成
         assertNotNull(created.getId());
