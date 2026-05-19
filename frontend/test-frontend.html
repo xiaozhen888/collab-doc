@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>实时协作 Demo</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        #editor { width: 100%; height: 400px; font-size: 16px; padding: 10px; }
+        #status { margin-bottom: 10px; padding: 5px; background: #eee; }
+        .connected { color: green; }
+        .disconnected { color: red; }
+    </style>
+</head>
+<body>
+<h1>实时协作文档</h1>
+<div id="status">⏳ 连接中...</div>
+<textarea id="editor" placeholder="开始编辑..."></textarea>
+<p>提示：打开两个浏览器窗口，编辑内容会实时同步</p>
+
+<script>
+    const docId = "test-new-doc";   //后续可以设计按钮让用户新建文档，即可得到空白文档
+    const editor = document.getElementById("editor");
+    const statusDiv = document.getElementById("status");
+
+    window.ws = new WebSocket("ws://localhost:8080/collab");
+
+    window.ws.onopen = function() {
+        statusDiv.innerHTML = "✅ 已连接";
+        statusDiv.className = "connected";
+        window.ws.send(JSON.stringify({ type: "join", docId: docId })); //只要浏览器打开（刷新），前端就会给后端发送join消息
+        console.log("已发送 join");
+    };
+
+    window.ws.onmessage = function(event) {
+        console.log("收到消息:", event.data);
+        const msg = JSON.parse(event.data);
+        if (msg.type === "init") {
+            editor.value = msg.content || "";
+        } else if (msg.type === "update") {
+            editor.value = msg.content || "";
+        }
+    };
+
+    window.ws.onerror = function(error) {
+        console.error("错误:", error);
+        statusDiv.innerHTML = "❌ 连接错误";
+        statusDiv.className = "disconnected";
+    };
+
+    window.ws.onclose = function() {
+        statusDiv.innerHTML = "❌ 已断开";
+        statusDiv.className = "disconnected";
+    };
+
+    editor.addEventListener("input", function() {   //事件监听，只要用户在窗口编辑内容，即刻将内容发送给后端进行提取并广播给其他用户以实现同步
+        if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+            window.ws.send(JSON.stringify({
+                type: "update",
+                docId: docId,
+                content: editor.value
+            }));
+            console.log("已发送 update");
+        }
+    });
+</script>
+</body>
+</html>
