@@ -28,16 +28,21 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))  //.cors(...)：开启CORS配置   //configurationSource(...):调用下面定义的CORS配置源
-                .csrf(csrf -> csrf.disable())   //禁用CSRF，CSRF是跨站请求伪造攻击，为什么禁用：因为使用JWT token认证，不需要CSRF保护
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))   //设置Session为无状态(JWT 认证是无状态 的，不需要服务器存储Session     //SessionCreationPolicy.STATELESS：不设置Session
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-//                        .antMatchers("/api/user/**","/collab/**","/api/history/**","/api/export/**","/api/share/**","/api/document/public/**","/api/document/**").permitAll()
-                                .anyRequest().permitAll()  //除了上面放行的路径之外的所有请求
-//                        .authenticated()   //必须认证（有token且有效）
+                        // 注册、登录公开
+                        .antMatchers("/api/user/register", "/api/user/login").permitAll()
+                        // 公开文档查询（分享链接用）
+                        .antMatchers("/api/document/public/**").permitAll()
+                        // WebSocket 握手（权限在 Handler 里校验）
+                        .antMatchers("/collab/**").permitAll()
+                        // 其他所有请求必须认证
+                        .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);  //在Spring Security的认证之前，先用我配置的JWT过滤器验证token
-        return http.build();    //返回构建结果
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
     }
 
     @Bean
