@@ -3,6 +3,6 @@
 target/
 *.log
 .DS_Store
-.env"docs/deploy/mysql_data/" 
+"docs/deploy/mysql_data/"
 "docs/deploy/redis_data/" 
 .env 
