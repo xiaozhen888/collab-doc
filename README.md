@@ -1,10 +1,10 @@
 # 实时协作文档编辑器
 
-基于 Yjs + Spring Boot + Vue3 的实时多人协作文档系统，支持多人同时编辑、版本历史。
+实时多人协作文档系统，支持多人同时编辑、版本历史。
 
 ## 功能特性
 
-- [x] 实时协同编辑（基于 Yjs CRDT 算法）
+- [x] 实时协同编辑
 - [x] 多人光标位置同步
 - [x] 在线用户列表
 - [x] 文档权限管理（只读/编辑/所有者）
@@ -18,7 +18,7 @@
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Vue 3, Yjs, Quill, Axios |
+| 前端 | Vue 3, Axios |
 | 后端 | Spring Boot, WebSocket, MyBatis-Plus |
 | 数据 | MySQL 8, Redis 6 |
 | 部署 | Docker, Docker Compose |
