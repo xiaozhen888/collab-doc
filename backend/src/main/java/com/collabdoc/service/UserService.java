@@ -16,11 +16,13 @@ public class UserService {
     private final UserMapper userMapper;    //用户数据访问对象，负责数据库操作
     private final JwtUtil jwtUtil;  //JWT工具类，负责生成和解析token
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();  //密码加密器，把明文密码加密成密文存储
+    private final LoginCacheService loginCacheService;  //登录缓存服务，负责记录用户的登录状态，减少重复BCrypt校验
 
     //构造器注入
-    public UserService(UserMapper userMapper, JwtUtil jwtUtil) {
+    public UserService(UserMapper userMapper, JwtUtil jwtUtil, LoginCacheService loginCacheService) {
         this.userMapper = userMapper;
         this.jwtUtil = jwtUtil;
+        this.loginCacheService = loginCacheService;
     }
 
     //注册
@@ -48,24 +50,29 @@ public class UserService {
 
     //登录
     public String login(String username, String password) {
-        User user = userMapper.selectList(null).stream()
-                .filter(u -> u.getUsername().equals(username))
-                .findFirst()
-                .orElse(null);
+        // 1. 先查用户是否存在
+        User user = userMapper.selectByUsername(username);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
 
-        if (user == null) throw new RuntimeException("用户不存在");
+        // 2. 检查缓存：最近5分钟内成功登录过？
+        if (loginCacheService.isRecentlyLoggedIn(username)) {
+            // 缓存命中，跳过BCrypt，直接生成token
+            System.out.println("【登录缓存】命中用户: " + username + "，跳过密码校验");
+            return jwtUtil.generateToken(user.getId(), username);
+        }
 
-        // 临时调试日志
-        System.out.println("=== 登录调试 ===");
-        System.out.println("输入密码: " + password);
-        System.out.println("数据库密码: " + user.getPassword());
-        System.out.println("比对结果: " + passwordEncoder.matches(password, user.getPassword()));
-        System.out.println("================");
+        // 3. 缓存未命中，正常BCrypt校验
+        System.out.println("【登录缓存】未命中用户: " + username + "，执行密码校验");
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new RuntimeException("用户名或密码错误");
+        }
 
-        //passwordEncoder.matches(明文，密文)：比对输入的密码和数据库中的加密密码
-        if (!passwordEncoder.matches(password, user.getPassword())) throw new RuntimeException("用户名或密码错误");
+        // 4. 校验成功，写入缓存
+        loginCacheService.recordSuccess(username);
 
-        //匹配成功，生成token返回给前端浏览器
+        // 5. 生成token
         return jwtUtil.generateToken(user.getId(), username);
     }
 

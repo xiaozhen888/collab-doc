@@ -1,0 +1,5 @@
+# 测试专用账号，仅用于本地JMeter压测，非生产数据
+username,password,userId
+testuser1,123456,user1
+testuser2,123456,user2
+testuser3,123456,user3

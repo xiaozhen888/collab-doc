@@ -36,24 +36,47 @@ const submit = async () => {
     let res
     if (isLogin.value) {
       res = await userApi.login({ username: username.value, password: password.value })
+
+      // ===== 先打印看后端到底返回了什么 =====
       console.log('完整响应:', res)
       console.log('res.data:', res.data)
-      console.log('token原始值:', JSON.stringify(res.data.token))
-      console.log('userId原始值:', JSON.stringify(res.data.userId))
-      //登录成功后保存token和userId
-      sessionStorage.setItem('token',res.data.token.trim())
-      sessionStorage.setItem('userId',res.data.userId.trim())
-      toast.success('登录成功')
+
+      // ===== 加空值保护 =====
+      const token = res.data?.token
+      const userId = res.data?.userId  // 可能没有
+
+      if (!token) {
+        toast.error('登录失败：未获取到 token')
+        return
+      }
+
+      sessionStorage.setItem('token', token.trim())
+      if (userId) {
+        sessionStorage.setItem('userId', userId.trim())
+      }
+
     } else {
       await userApi.register({ username: username.value, password: password.value, email: email.value })
       res = await userApi.login({ username: username.value, password: password.value })
-      //注册并登录成功后保存token和userId
-      sessionStorage.setItem('token',res.data.trim())
-      sessionStorage.setItem('userId',res.data.userId.trim())
+
+      // 注册分支也要加保护
+      console.log('注册后登录响应:', res.data)
+      const token = res.data?.token
+      const userId = res.data?.userId
+
+      if (!token || !userId) {
+        toast.error('自动登录失败：后端返回数据异常')
+        return
+      }
+
+      sessionStorage.setItem('token', token.trim())
+      sessionStorage.setItem('userId', userId.trim())
       toast.success('注册成功，已自动登录')
     }
+
     router.push('/')
-  } catch (error) {
+
+  }  catch (error) {
     console.error('错误:', error)
 
     // 获取错误信息
